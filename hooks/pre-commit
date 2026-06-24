@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Deterministic guardrail: never let feedback data (real users' PII) get committed.
+# Activate once with:  git config core.hooksPath hooks
+set -euo pipefail
+
+staged="$(git diff --cached --name-only)"
+
+# 1) Hard block on the data directories
+blocked="$(echo "$staged" | grep -E '^(raw/|data/|digests/)' || true)"
+if [ -n "$blocked" ]; then
+  echo "✋ pre-commit: refusing to commit feedback data (contains users' PII):"
+  echo "$blocked" | sed 's/^/   - /'
+  echo "   Unstage them:  git restore --staged <file>"
+  exit 1
+fi
+
+# 2) Catch stray exports / tagged data anywhere outside samples/
+stray="$(echo "$staged" | grep -E '(tagged\.jsonl$|_chat\.txt$|[Ww]hats[Aa]pp.*\.txt$)' | grep -v '^samples/' || true)"
+if [ -n "$stray" ]; then
+  echo "✋ pre-commit: this looks like feedback data and is blocked (samples/ is allowed):"
+  echo "$stray" | sed 's/^/   - /'
+  exit 1
+fi
+
+exit 0

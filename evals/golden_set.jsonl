@@ -1,0 +1,13 @@
+{"text": "got connected to someone totally irrelevant to what I'm building", "expected": {"type": "pain_point", "product_area": "matching", "sentiment": "negative", "severity": "medium", "quote_worthy": true}}
+{"text": "closed a design partner from one intro last week", "expected": {"type": "praise", "product_area": "matching", "sentiment": "positive", "severity": "none", "quote_worthy": true}}
+{"text": "wish I could control how often Boardy calls me, 7am felt intrusive", "expected": {"type": "feature_request", "product_area": "notifications", "sentiment": "negative", "severity": "medium", "quote_worthy": true}}
+{"text": "let me set quiet hours", "expected": {"type": "feature_request", "product_area": "notifications", "sentiment": "neutral", "severity": "low", "quote_worthy": false}}
+{"text": "love that it remembers context across calls", "expected": {"type": "praise", "product_area": "voice_onboarding", "sentiment": "positive", "severity": "none", "quote_worthy": true}}
+{"text": "we both said yes and it kind of fizzled, would love a nudge to book the call", "expected": {"type": "feature_request", "product_area": "scheduling", "sentiment": "mixed", "severity": "high", "quote_worthy": true}}
+{"text": "double opt-in is great for trust but the back-and-forth takes days", "expected": {"type": "pain_point", "product_area": "trust", "sentiment": "mixed", "severity": "high", "quote_worthy": true}}
+{"text": "Boardy emailed me an intro for someone I'd already declined", "expected": {"type": "bug", "product_area": "matching", "sentiment": "negative", "severity": "high", "quote_worthy": true}}
+{"text": "thinking of cancelling, 9 intros and none turned into anything real", "expected": {"type": "churn_risk", "product_area": "matching", "sentiment": "negative", "severity": "high", "quote_worthy": true}}
+{"text": "let me tell Boardy I'm fundraising so it prioritizes investor intros", "expected": {"type": "feature_request", "product_area": "matching", "sentiment": "neutral", "severity": "medium", "quote_worthy": true}}
+{"text": "how does Boardy decide who to introduce me to?", "expected": {"type": "question", "product_area": "matching", "sentiment": "neutral", "severity": "low", "quote_worthy": false}}
+{"text": "using it mostly to find early customers, works surprisingly well", "expected": {"type": "use_case", "product_area": "matching", "sentiment": "positive", "severity": "none", "quote_worthy": true}}
+{"text": "the voice onboarding felt like talking to a person, minor: talked a bit fast", "expected": {"type": "praise", "product_area": "voice_onboarding", "sentiment": "positive", "severity": "low", "quote_worthy": true}}
