@@ -12,8 +12,10 @@ Voice-of-customer tool: turns the ~600-person **Boardy Pro trial-user WhatsApp f
 - Build Roadmap (tasks + acceptance criteria): https://app.notion.com/p/3894ac696ceb81d9b1f2c202ba88787e
 
 ## Commands
-- Parse an export: `python3 scripts/parse_whatsapp.py <path-to-export.txt>`
+- Parse an export: `python3 scripts/parse_whatsapp.py <path-to-export.txt>` → writes `data/untagged_queue.jsonl` (new messages only) + `data/messages_parsed.jsonl`.
 - Run tests: `python3 -m pytest` — *tests are the contract for "done"; implement to pass them, never weaken a test to pass code.*
+- Run one test: `python3 -m pytest tests/test_parser.py::test_name` (or `-k <substring>`).
+- Activate the PII guard once per clone: `git config core.hooksPath hooks` (enables `hooks/pre-commit`, which blocks `raw/ data/ digests/` and stray exports).
 - (Full pipeline + Notion-sync commands are added here as they're built.)
 
 ## Architecture (summary — full detail in Notion)
