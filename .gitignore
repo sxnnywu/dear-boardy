@@ -1,0 +1,12 @@
+# ── NEVER commit feedback data (contains ~600 real users' messages / PII) ──
+raw/
+data/
+digests/
+
+# OS / editor / Python junk
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
