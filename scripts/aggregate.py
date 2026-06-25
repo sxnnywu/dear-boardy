@@ -16,8 +16,9 @@ Per theme it computes:
   distinct_users distinct hashed users mentioning it (the headline metric;
                  always <= frequency because one user can speak many times)
   product_area   dominant area (mode; ties broken by canonical order)
-  sentiment      "mixed" if the room is split (any mixed, or both pos & neg);
-                 otherwise the mode, ties leaning negative > positive > neutral
+  sentiment      lean of opinionated messages (neutral excluded): positive /
+                 negative when one side clearly leads, "mixed" only when split,
+                 "neutral" when few messages carry an opinion
   severity       the WORST severity present (a theme is as urgent as its worst report)
   quotes         up to --max-quotes representative quote_worthy verbatims
 """
@@ -29,7 +30,12 @@ from pathlib import Path
 PRODUCT_AREAS = ["matching", "voice_onboarding", "scheduling",
                  "notifications", "trust", "pro", "other"]
 SEVERITY_ORDER = ["none", "low", "medium", "high"]       # index = severity rank
-SENTIMENT_TIE = ["negative", "positive", "neutral"]      # mode tie-break priority
+
+# A theme's sentiment is the *lean of its opinionated messages* (neutral = no
+# opinion, excluded). The old "any positive AND any negative -> mixed" rule made
+# every large theme 'mixed' — at scale almost any theme has one of each. Instead:
+SENTIMENT_LEAN = 0.25        # |lean| below this = genuinely split -> "mixed"
+SENTIMENT_MIN_ENGAGED = 0.2  # if fewer than this share carry an opinion -> "neutral"
 
 
 def load_tagged(data_dir: Path) -> list:
@@ -55,11 +61,20 @@ def _dominant(values, tie_order):
 
 
 def _theme_sentiment(sentiments) -> str:
-    counts = Counter(sentiments)
-    # the room is split -> mixed
-    if counts["mixed"] or (counts["positive"] and counts["negative"]):
-        return "mixed"
-    return _dominant(sentiments, SENTIMENT_TIE)
+    c = Counter(sentiments)
+    pos, neg, mix = c["positive"], c["negative"], c["mixed"]
+    engaged = pos + neg + mix
+    # mostly no-opinion (neutral/descriptive) -> neutral
+    if not engaged or engaged < SENTIMENT_MIN_ENGAGED * len(sentiments):
+        return "neutral"
+    # split explicitly-"mixed" messages evenly across the two poles, then lean
+    p, n = pos + mix / 2, neg + mix / 2
+    lean = (p - n) / (p + n)
+    if lean >= SENTIMENT_LEAN:
+        return "positive"
+    if lean <= -SENTIMENT_LEAN:
+        return "negative"
+    return "mixed"  # genuinely divided
 
 
 def _worst_severity(severities) -> str:
