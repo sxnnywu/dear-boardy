@@ -81,6 +81,36 @@ def test_finalize_without_tagged_errors(tmp_path):
     assert "nothing to finalize" in r.stderr
 
 
+def test_finalize_skips_eval_when_no_predictions(tmp_path):
+    # predictions are gitignored/agent-produced; a missing file must skip cleanly
+    run(["--stage", "ingest", "--export", str(SAMPLE), "--data-dir", str(tmp_path)])
+    _tag_queue(tmp_path)
+    r = run(["--stage", "finalize", "--data-dir", str(tmp_path),
+             "--eval-pred", str(tmp_path / "nope.jsonl")])
+    assert r.returncode == 0, r.stderr
+    assert "tagging eval" in r.stdout and "skipped" in r.stdout
+
+
+def test_finalize_eval_reports_by_default_and_gate_can_halt(tmp_path):
+    run(["--stage", "ingest", "--export", str(SAMPLE), "--data-dir", str(tmp_path)])
+    _tag_queue(tmp_path)
+    # a deliberately-wrong prediction for one golden text → sub-threshold score
+    golden = [json.loads(l) for l in
+              (REPO / "evals" / "golden_set.jsonl").read_text().splitlines() if l.strip()]
+    wrong = {"text": golden[0]["text"], "type": "other", "product_area": "other",
+             "sentiment": "neutral", "severity": "none", "quote_worthy": False, "theme": "x"}
+    pred = tmp_path / "pred.jsonl"
+    pred.write_text(json.dumps(wrong) + "\n")
+    # default: the scorecard is reported but a dip does NOT halt the run
+    r = run(["--stage", "finalize", "--data-dir", str(tmp_path), "--eval-pred", str(pred)])
+    assert r.returncode == 0, r.stderr
+    assert "CORE OVERALL" in r.stdout and "not gated" in r.stdout
+    # --eval-gate: a sub-threshold score halts the run
+    r2 = run(["--stage", "finalize", "--data-dir", str(tmp_path),
+              "--eval-pred", str(pred), "--eval-gate"])
+    assert r2.returncode != 0
+
+
 def test_all_is_idempotent_on_rerun(tmp_path):
     # first pass: ingest + tag, so every message id is now in tagged.jsonl
     run(["--stage", "ingest", "--export", str(SAMPLE), "--data-dir", str(tmp_path)])

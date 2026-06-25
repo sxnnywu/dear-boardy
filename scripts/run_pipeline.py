@@ -12,8 +12,14 @@ this is its runnable skeleton.
 Stages
   ingest    parse the export → data/untagged_queue.jsonl (only net-new messages)
             ⏸ then the agent tags the queue → appends to data/tagged.jsonl
-  finalize  lint tagged.jsonl → recompute themes.jsonl → PII-scan outputs
+  finalize  lint tagged.jsonl → recompute themes.jsonl → PII-scan outputs →
+            score tagging quality (if evals/predictions.jsonl exists)
             ⏸ then the agent derives Opportunities + persists to Notion
+
+Tagging eval: finalize auto-runs evals/run_eval.py when a predictions file is
+present, so every production run self-reports tagging quality. Predictions are
+agent-produced (tag the golden texts) and gitignored, so when absent — e.g. in
+CI — the step skips cleanly. Reported, not gated, unless --eval-gate is passed.
 
 Usage
   python3 scripts/run_pipeline.py --export raw/export.txt        # ingest, then
@@ -62,8 +68,36 @@ def ingest(export: Path, data_dir: Path) -> int:
     return _count_lines(data_dir / "untagged_queue.jsonl")
 
 
-def finalize(data_dir: Path, max_quotes: int) -> None:
-    """Deterministic post-tag chain: lint → aggregate → PII scan. Fail-fast."""
+def score_tagging(eval_pred: str, gate: bool) -> None:
+    """Auto-score tagging quality against the golden set, if predictions exist.
+
+    Runs every finalize so each production tagging run self-reports quality.
+    Predictions are agent-produced + gitignored, so a missing file (e.g. in CI)
+    just skips. Non-fatal by default — a dip is surfaced, not allowed to block
+    publishing insight; pass --eval-gate to make a sub-threshold score halt.
+    """
+    pred = Path(eval_pred)
+    if not pred.is_absolute():
+        pred = REPO / eval_pred
+    label = "finalize · tagging eval"
+    print(f"\n── {label} " + "─" * max(0, 60 - len(label)))
+    if not pred.exists():
+        print(f"  ⏭ skipped — no predictions at {eval_pred} "
+              f"(tag the golden set → enable self-scoring)")
+        return
+    argv = [sys.executable, str(REPO / "evals" / "run_eval.py"), "--pred", str(pred)]
+    print("$ " + " ".join(str(a) for a in argv), flush=True)  # flush before child output
+    rc = subprocess.run(argv, cwd=REPO).returncode
+    if rc != 0:
+        if gate:
+            sys.exit("✗ pipeline halted: tagging eval below threshold (--eval-gate)")
+        print("  ⚠ tagging eval below threshold — reported, not gated "
+              "(use --eval-gate to fail the run on a dip)")
+
+
+def finalize(data_dir: Path, max_quotes: int,
+             eval_pred: str = "evals/predictions.jsonl", eval_gate: bool = False) -> None:
+    """Deterministic post-tag chain: lint → aggregate → PII scan → tagging eval."""
     tagged = data_dir / "tagged.jsonl"
     if not tagged.exists():
         sys.exit(f"✗ nothing to finalize: {tagged} does not exist (tag first)")
@@ -75,6 +109,7 @@ def finalize(data_dir: Path, max_quotes: int) -> None:
     _run([sys.executable, str(SCRIPTS / "check_pii.py"),
           str(tagged), str(data_dir / "themes.jsonl")],
          "finalize · PII scan")
+    score_tagging(eval_pred, eval_gate)
 
 
 def main() -> None:
@@ -84,6 +119,12 @@ def main() -> None:
     ap.add_argument("--max-quotes", type=int, default=3)
     ap.add_argument("--stage", choices=["ingest", "finalize", "all"], default="all",
                     help="all (default): ingest, then finalize iff 0 net-new")
+    ap.add_argument("--eval-pred", default="evals/predictions.jsonl",
+                    help="predictions JSONL to self-score tagging quality at finalize "
+                         "(skipped if absent)")
+    ap.add_argument("--eval-gate", action="store_true",
+                    help="halt the run if the tagging eval is below threshold "
+                         "(default: report only)")
     args = ap.parse_args()
 
     data_dir = Path(args.data_dir)
@@ -107,7 +148,7 @@ def main() -> None:
         print("  Continuing to finalize (idempotent recompute).")
 
     if args.stage in ("finalize", "all"):
-        finalize(data_dir, args.max_quotes)
+        finalize(data_dir, args.max_quotes, args.eval_pred, args.eval_gate)
         print("\n⏸ AGENT STEP — derive Opportunities (AGGREGATION.md) and persist")
         print("   to Notion (RUNBOOK.md → Persist): upsert Themes + Opportunities")
         print("   via plan_upsert/notion_index, post the dated digest, refresh the")
