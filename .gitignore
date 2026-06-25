@@ -13,3 +13,6 @@ venv/
 
 # pytest
 .pytest_cache/
+
+# eval predictions are regenerated outputs, not source (golden_set.jsonl is the truth)
+evals/predictions*.jsonl
