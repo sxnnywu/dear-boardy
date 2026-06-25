@@ -53,14 +53,22 @@ for consistency); coin a new theme only when nothing fits. Append validated reco
 to `data/tagged.jsonl` (the local **source of truth**, append-only). Batch large
 queues; never feed the whole corpus in one call.
 
+**2b · Self-score the tagger (AGENT, optional but recommended).** While tagging,
+also tag the golden-set texts (`evals/golden_set.jsonl`) into
+`evals/predictions.jsonl` (same shape as `tagged.jsonl`). This lets finalize
+self-report tagging quality each run so you can track drift over time. Cheap (13
+messages); skip only if you're in a hurry.
+
 **3 · Finalize (deterministic).**
 ```
 python3 scripts/run_pipeline.py --stage finalize
 ```
 Runs, fail-fast: `lint_tagged` (schema contract + duplicate-id guard) →
 `aggregate` (recompute `data/themes.jsonl`) → `check_pii` (no names/phones/emails
-in `tagged.jsonl` or `themes.jsonl`). If lint fails, fix the offending tags in
-step 2 and re-run — do **not** weaken the validator.
+in `tagged.jsonl` or `themes.jsonl`) → **tagging eval** (auto-scores
+`evals/predictions.jsonl` vs the golden set if present; reported, not gated —
+pass `--eval-gate` to halt on a sub-threshold dip). If lint fails, fix the
+offending tags in step 2 and re-run — do **not** weaken the validator.
 
 **4 · Derive Opportunities (AGENT).** Cluster Themes into Opportunities per
 `AGGREGATION.md` → write `data/opportunities.jsonl` (problem statement,
