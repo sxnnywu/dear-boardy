@@ -42,5 +42,15 @@ Output one record per opportunity to `data/opportunities.jsonl`:
 ## Clustering (carried forward)
 Themes are an evolving taxonomy owned at tag time (`TAGGING.md`). Aggregation does **not** rename or merge theme labels — if two labels are near-duplicates, fix the taxonomy at the tag step and re-tag, so `tagged.jsonl` stays the single source of truth.
 
-## Persist
+## Persist (idempotent)
 Both files are upserted to Notion by the persist step (targets in `scripts/notion_targets.py`): Themes + Opportunities rows, the relation between them, representative quotes in each Theme's page body, then a dated digest on the hub. Notion is presentation only — everything here is recomputed from `tagged.jsonl` each run.
+
+**Upsert, never insert.** Persist must be idempotent — a re-run updates existing rows, it never duplicates them. Since a data-source SQL query needs a Business plan, persist keeps a local `title → page-URL` index (`data/notion_index.json`) as bookkeeping and drives create-vs-update through `scripts/notion_sync.py:plan_upsert()`:
+1. `idx = load_index("data/notion_index.json")`
+2. `create, update = plan_upsert(idx["themes"], themes, key="theme")` (same for opportunities)
+3. create the `create` pages via MCP; update the `update` pages in place by their `url`
+4. write new `title → url` pairs back into the index and `save_index()`
+
+## Verify before/after persist
+- `python3 scripts/lint_tagged.py` — every `tagged.jsonl` record passes `validate_tag()`, no duplicate ids.
+- `python3 scripts/check_pii.py data/tagged.jsonl data/themes.jsonl` — no author fields, non-hashed users, or phone/email leaking into quotes that get published.
