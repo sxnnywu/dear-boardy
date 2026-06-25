@@ -14,5 +14,8 @@ venv/
 # pytest
 .pytest_cache/
 
+# scheduled-run logs (may echo feedback content)
+logs/
+
 # eval predictions are regenerated outputs, not source (golden_set.jsonl is the truth)
 evals/predictions*.jsonl

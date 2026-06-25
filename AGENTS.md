@@ -12,15 +12,17 @@ Voice-of-customer tool: turns the ~600-person **Boardy Pro trial-user WhatsApp f
 - Build Roadmap (tasks + acceptance criteria): https://app.notion.com/p/3894ac696ceb81d9b1f2c202ba88787e
 
 ## Commands
-- Parse an export: `python3 scripts/parse_whatsapp.py <path-to-export.txt>` → writes `data/untagged_queue.jsonl` (new messages only) + `data/messages_parsed.jsonl`.
+- Run the whole pipeline: `python3 scripts/run_pipeline.py --export raw/<export>.txt` — sequences the deterministic backbone (parse → lint → aggregate → PII scan) and **stops at ⏸ AGENT STEP markers** where the model must tag, frame Opportunities, and persist. `--stage finalize` runs just the post-tag chain; `--stage ingest` just parses. The canonical end-to-end procedure (incl. the agent steps + Notion persist) is `RUNBOOK.md` — this is what the scheduled task follows daily + on-demand. Idempotent: a re-run with no new messages is a safe no-op.
+- Parse an export: `python3 scripts/parse_whatsapp.py <path-to-export.txt>` → writes `data/untagged_queue.jsonl` (new messages only) + `data/messages_parsed.jsonl`. Both deterministic scripts take `--data-dir DIR` to redirect I/O (handy for tests/dry-runs); `aggregate.py` also takes `--max-quotes N`.
 - Tagging has **no script** — Claude tags by reading `data/untagged_queue.jsonl` (per `TAGGING.md`) and writing `data/tagged.jsonl`. Only parse+dedup are coded; the tag/cluster step is agent-run.
 - Aggregate Themes: `python3 scripts/aggregate.py` → reads `data/tagged.jsonl`, writes `data/themes.jsonl` (deterministic counts only). **Opportunities** are agent-derived per `AGGREGATION.md` → `data/opportunities.jsonl` (no script — the framing half is the model).
 - Persist to Notion: agent-run via the Notion MCP — **upsert** Themes + Opportunities (data-source targets in `scripts/notion_targets.py`), then post a dated digest on the hub. No standing script; Notion is presentation only. Persist is **idempotent** — drive create-vs-update through `scripts/notion_sync.py:plan_upsert()` against the local `data/notion_index.json`; re-running never duplicates rows (see `AGGREGATION.md`).
 - Verify outputs before/after persist: `python3 scripts/lint_tagged.py` (schema contract + duplicate-id guard on `tagged.jsonl`) and `python3 scripts/check_pii.py data/tagged.jsonl data/themes.jsonl` (no names/phones/emails leak into published quotes). Both are covered by unit tests in CI.
 - Run tests: `python3 -m pytest` — *tests are the contract for "done"; implement to pass them, never weaken a test to pass code.* CI (`.github/workflows/ci.yml`) runs this on push/PR.
 - Score tagging quality: `python3 evals/run_eval.py --pred <predictions.jsonl>` — scores tags vs `evals/golden_set.jsonl` (core enums gated, `theme` informational). Predictions are agent-produced and gitignored; the scorer itself is covered by `tests/test_eval.py`.
-- Run one test: `python3 -m pytest tests/test_parser.py::test_name` (or `-k <substring>`). Three contracts: `test_parser.py` (ingestion) + `test_schema.py` (tag validator) + `test_aggregate.py` (Themes aggregation). Run from repo root — `conftest.py` puts it on `sys.path`.
+- Run one test: `python3 -m pytest tests/test_parser.py::test_name` (or `-k <substring>`). Eight contracts: `test_parser.py` (ingestion) + `test_schema.py` (tag validator) + `test_aggregate.py` (Themes aggregation) + `test_check_pii.py` (PII guard) + `test_lint.py` (`tagged.jsonl` schema/dup lint) + `test_notion_sync.py` (idempotent upsert) + `test_eval.py` (tagging-quality scorer) + `test_run_pipeline.py` (orchestration driver). Run from repo root — `conftest.py` puts it on `sys.path`.
 - Activate the PII guard once per clone: `git config core.hooksPath hooks` (enables `hooks/pre-commit`, which blocks `raw/ data/ digests/` and stray exports).
+- Schedule the daily run (local, by design — the data is local PII): `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.dear-boardy.pipeline.plist`. The launchd job runs `scripts/run_scheduled.sh` (Claude headless following `RUNBOOK.md`) at 08:00 local; `bash scripts/run_scheduled.sh` runs it on-demand. Logs in `logs/` (gitignored). Not a cloud routine — cloud agents can't see local `raw/`+`data/`.
 
 ## Architecture (summary — full detail in Notion)
 Manual WhatsApp export (`.txt`) → Python *parse · pseudonymize · dedup* → `data/tagged.jsonl` (local **source of truth**) → Claude *tags new messages, batched* → recompute **Themes + Opportunities** → **incremental upsert to Notion** (presentation). Orchestrated by a scheduled task (daily + on-demand). Deterministic steps in Python; tagging/clustering via the model.
@@ -36,7 +38,7 @@ Data files (all gitignored): `messages_parsed.jsonl` = full snapshot each run ·
 - Ingestion is a **pluggable adapter** (manual export now; WhatsApp-MCP bridge later). Tagging is **message-level** for v1.
 
 ## Conventions
-- Python 3 (stdlib + light deps). Data is **JSONL** (one record per line).
+- Python 3, **stdlib only** at runtime — `pip install -r requirements.txt` just adds `pytest` for dev/CI. Data is **JSONL** (one record per line).
 - Tagging taxonomy + the executable prompt live in `TAGGING.md`; output must be **strict JSON** that passes `scripts/schema.py:validate_tag()` (deterministic enum/field check — that validator is the contract, not the model).
 - Aggregation is split: deterministic Theme counts in `scripts/aggregate.py`; agent-run clustering/framing + Opportunity derivation spec'd in `AGGREGATION.md`. Themes are recomputed from `tagged.jsonl` each run — never hand-edit the labels; fix the taxonomy at tag time and re-tag.
 - Don't hardcode file paths in prose docs — they drift; describe conventions instead.
