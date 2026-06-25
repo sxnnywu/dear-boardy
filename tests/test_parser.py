@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from scripts.parse_whatsapp import parse, hash_user, msg_id, load_existing_ids
+from scripts.parse_whatsapp import parse, hash_user, msg_id, load_existing_ids, redact_pii
 
 SAMPLE = Path(__file__).resolve().parent.parent / "samples" / "sample_chat.txt"
 
@@ -54,9 +54,31 @@ def test_multiline_message_is_captured():
 
 
 def test_msg_id_is_deterministic():
-    a = msg_id("2026-06-20", "Sarah", "hello")
-    b = msg_id("2026-06-20", "Sarah", "hello")
+    a = msg_id("2026-06-20", "9:41 AM", "Sarah", "hello")
+    b = msg_id("2026-06-20", "9:41 AM", "Sarah", "hello")
     assert a == b and len(a) == 16
+
+
+def test_msg_id_distinguishes_same_text_at_different_times():
+    # same author, same day, same text, different time = two distinct messages,
+    # so their ids must differ (else the lint duplicate-id guard would fire)
+    first = msg_id("2026-06-20", "9:41 AM", "Sarah", "thanks!")
+    later = msg_id("2026-06-20", "2:15 PM", "Sarah", "thanks!")
+    assert first != later
+
+
+def test_parse_output_has_unique_ids():
+    # the queue/parsed snapshot must never contain a duplicate id
+    ids = [m["id"] for m in parse(SAMPLE)]
+    assert len(ids) == len(set(ids))
+
+
+def test_redact_pii_scrubs_email_and_phone_but_keeps_dates_and_short_numbers():
+    assert redact_pii("ping me at jo@boardy.ai please") == "ping me at [email] please"
+    assert redact_pii("my number is +1 415 969 9735 ok") == "my number is [phone] ok"
+    assert redact_pii("call 1990941605938 now") == "call [phone] now"
+    # dates and short numbers (<10 digits) must survive untouched
+    assert redact_pii("on 2026-06-20 i had 9 intros") == "on 2026-06-20 i had 9 intros"
 
 
 def test_dedup_is_idempotent(tmp_path):
