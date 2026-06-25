@@ -9,8 +9,11 @@ What it does:
   1. Parses WhatsApp exports (iOS and Android formats, multi-line messages).
   2. Drops system/noise lines (encryption notices, "joined", "added", etc.).
   3. Pseudonymizes each author to a stable hashed user id (U-xxxx) at parse time —
-     names and phone numbers are never stored, even locally.
-  4. Assigns each message a stable id = sha1(date|user|text).
+     names and phone numbers are never stored, even locally. Also redacts any
+     email/phone a user typed into a message body (those get published in quotes).
+  4. Assigns each message a stable id = sha1(date|time|user|text) — time is
+     part of identity, so the same author posting the same text twice in one day
+     stays two distinct messages instead of colliding onto one id.
   5. Dedupes against data/tagged.jsonl (already-tagged messages).
   6. Writes data/untagged_queue.jsonl = ONLY new messages needing tagging.
 
@@ -66,8 +69,28 @@ def hash_user(raw: str) -> str:
     return "U-" + hashlib.sha1(raw.strip().encode()).hexdigest()[:USER_HASH_LEN]
 
 
-def msg_id(date: str, user: str, text: str) -> str:
-    return hashlib.sha1(f"{date}|{user}|{text}".encode()).hexdigest()[:16]
+def msg_id(date: str, time: str, user: str, text: str) -> str:
+    return hashlib.sha1(f"{date}|{time}|{user}|{text}".encode()).hexdigest()[:16]
+
+
+# Content-level PII: users sometimes paste their own email / phone into a message
+# body. Quotes are published to Notion verbatim, so redact those patterns from the
+# stored text. Mirrors the detectors in check_pii.py so a redacted corpus passes the
+# guard. Redaction runs AFTER msg_id (ids derive from the original text, so dedup
+# stays stable run-to-run even though the stored text is scrubbed).
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_PHONE_RE = re.compile(r"\+?\d[\d\s().\-]{6,}\d")
+
+
+def redact_pii(text: str) -> str:
+    text = _EMAIL_RE.sub("[email]", text)
+    # only redact digit runs that are phone-length (>=10 digits) so dates / counts
+    # / short numbers are left intact — same threshold the PII guard uses.
+    text = _PHONE_RE.sub(
+        lambda m: "[phone]" if sum(c.isdigit() for c in m.group()) >= 10 else m.group(),
+        text,
+    )
+    return text
 
 
 def parse(path: Path):
@@ -99,14 +122,18 @@ def parse(path: Path):
     if current:
         messages.append(current)
 
-    # filter system/noise + empty, attach ids
-    cleaned = []
+    # filter system/noise + empty, attach ids, drop byte-identical repeats
+    cleaned, seen = [], set()
     for mm in messages:
         if SYSTEM_RE.search(mm["text"]) and len(mm["text"]) < 120:
             continue
         if not mm["text"].strip():
             continue
-        mm["id"] = msg_id(mm["date"], mm["user"], mm["text"])
+        mm["id"] = msg_id(mm["date"], mm["time"], mm["user"], mm["text"])
+        if mm["id"] in seen:  # a literal duplicate line in the export — keep one
+            continue
+        seen.add(mm["id"])
+        mm["text"] = redact_pii(mm["text"])  # scrub typed email/phone from stored text
         cleaned.append(mm)
     return cleaned
 
