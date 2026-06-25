@@ -34,12 +34,18 @@ def test_worst_severity_wins():
     assert _worst_severity(["none", "medium", "low"]) == "medium"
 
 
-def test_sentiment_is_mixed_when_room_is_split():
-    assert _theme_sentiment(["positive", "negative"]) == "mixed"
-    assert _theme_sentiment(["mixed", "positive"]) == "mixed"
-    # not split -> mode, negative wins the tie
-    assert _theme_sentiment(["negative", "neutral"]) == "negative"
-    assert _theme_sentiment(["neutral", "neutral", "positive"]) == "neutral"
+def test_theme_sentiment_reports_lean_not_just_any_split():
+    # a clear majority reports its lean (not "mixed" just because one of each exists)
+    assert _theme_sentiment(["positive"] * 9 + ["negative"]) == "positive"
+    assert _theme_sentiment(["negative"] * 9 + ["positive"]) == "negative"
+    # genuinely balanced -> mixed
+    assert _theme_sentiment(["positive"] * 5 + ["negative"] * 5) == "mixed"
+    # explicit "mixed" tags pull toward mixed
+    assert _theme_sentiment(["mixed"] * 4) == "mixed"
+    # mostly no-opinion -> neutral (a lone positive doesn't flip a neutral theme)
+    assert _theme_sentiment(["neutral"] * 9 + ["positive"]) == "neutral"
+    # a one-sided theme with no opposing voice still reports its lean
+    assert _theme_sentiment(["negative"] * 9 + ["neutral"]) == "negative"
 
 
 def test_dominant_product_area_with_canonical_tiebreak():
