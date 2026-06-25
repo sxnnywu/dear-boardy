@@ -61,4 +61,4 @@ A short (2–4 word) human-readable cluster label, e.g. *"Intro relevance"*, *"C
 | "how does Boardy decide who to introduce me to?" | question | matching | neutral | low | false |
 | "thinking of cancelling, 9 intros, nothing real" | churn_risk | matching | negative | high | true |
 
-Quality is measured against `evals/golden_set.jsonl`.
+Quality is measured against `evals/golden_set.jsonl`: tag those texts into a predictions JSONL, then score with `python3 evals/run_eval.py --pred <predictions.jsonl>`. The scorer gates on the core enum fields; `theme` is reported but not gated (it's an evolving taxonomy).

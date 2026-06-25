@@ -10,8 +10,8 @@ What it does:
   2. Drops system/noise lines (encryption notices, "joined", "added", etc.).
   3. Anonymizes authors (first name only; phone-number authors -> stable Member_xxxx).
   4. Assigns each message a stable id = sha1(date|author|text).
-  5. Dedupes against feedback/data/tagged.jsonl (already-tagged messages).
-  6. Writes feedback/data/untagged_queue.jsonl = ONLY new messages needing tagging.
+  5. Dedupes against data/tagged.jsonl (already-tagged messages).
+  6. Writes data/untagged_queue.jsonl = ONLY new messages needing tagging.
 
 The tagging/clustering step is done by the agent (Claude) reading the queue —
 this script only handles deterministic parsing + dedup so that part is reliable.
