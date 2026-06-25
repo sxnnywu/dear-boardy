@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        # Tests are the contract for "done". This also covers the tagging-quality
+        # scorer (tests/test_eval.py); the full golden-set eval needs predictions,
+        # which are agent-produced and gitignored, so it's run on-demand, not in CI.
+        run: python -m pytest -q

@@ -13,13 +13,19 @@ Voice-of-customer tool: turns the ~600-person **Boardy Pro trial-user WhatsApp f
 
 ## Commands
 - Parse an export: `python3 scripts/parse_whatsapp.py <path-to-export.txt>` → writes `data/untagged_queue.jsonl` (new messages only) + `data/messages_parsed.jsonl`.
-- Run tests: `python3 -m pytest` — *tests are the contract for "done"; implement to pass them, never weaken a test to pass code.*
-- Run one test: `python3 -m pytest tests/test_parser.py::test_name` (or `-k <substring>`).
+- Tagging has **no script** — Claude tags by reading `data/untagged_queue.jsonl` (per `TAGGING.md`) and writing `data/tagged.jsonl`. Only parse+dedup are coded; the tag/cluster step is agent-run.
+- Aggregate Themes: `python3 scripts/aggregate.py` → reads `data/tagged.jsonl`, writes `data/themes.jsonl` (deterministic counts only). **Opportunities** are agent-derived per `AGGREGATION.md` → `data/opportunities.jsonl` (no script — the framing half is the model).
+- Persist to Notion: agent-run via the Notion MCP — **upsert** Themes + Opportunities (data-source targets in `scripts/notion_targets.py`), then post a dated digest on the hub. No standing script; Notion is presentation only. Persist is **idempotent** — drive create-vs-update through `scripts/notion_sync.py:plan_upsert()` against the local `data/notion_index.json`; re-running never duplicates rows (see `AGGREGATION.md`).
+- Verify outputs before/after persist: `python3 scripts/lint_tagged.py` (schema contract + duplicate-id guard on `tagged.jsonl`) and `python3 scripts/check_pii.py data/tagged.jsonl data/themes.jsonl` (no names/phones/emails leak into published quotes). Both are covered by unit tests in CI.
+- Run tests: `python3 -m pytest` — *tests are the contract for "done"; implement to pass them, never weaken a test to pass code.* CI (`.github/workflows/ci.yml`) runs this on push/PR.
+- Score tagging quality: `python3 evals/run_eval.py --pred <predictions.jsonl>` — scores tags vs `evals/golden_set.jsonl` (core enums gated, `theme` informational). Predictions are agent-produced and gitignored; the scorer itself is covered by `tests/test_eval.py`.
+- Run one test: `python3 -m pytest tests/test_parser.py::test_name` (or `-k <substring>`). Three contracts: `test_parser.py` (ingestion) + `test_schema.py` (tag validator) + `test_aggregate.py` (Themes aggregation). Run from repo root — `conftest.py` puts it on `sys.path`.
 - Activate the PII guard once per clone: `git config core.hooksPath hooks` (enables `hooks/pre-commit`, which blocks `raw/ data/ digests/` and stray exports).
-- (Full pipeline + Notion-sync commands are added here as they're built.)
 
 ## Architecture (summary — full detail in Notion)
 Manual WhatsApp export (`.txt`) → Python *parse · pseudonymize · dedup* → `data/tagged.jsonl` (local **source of truth**) → Claude *tags new messages, batched* → recompute **Themes + Opportunities** → **incremental upsert to Notion** (presentation). Orchestrated by a scheduled task (daily + on-demand). Deterministic steps in Python; tagging/clustering via the model.
+
+Data files (all gitignored): `messages_parsed.jsonl` = full snapshot each run · `untagged_queue.jsonl` = only-new messages, the tagger's input · `tagged.jsonl` = source of truth dedup diffs against by `id` · `themes.jsonl` = recomputed Theme aggregates · `opportunities.jsonl` = agent-derived Opportunities. The last two are recomputed from `tagged.jsonl` each run and upserted to Notion. Notion upsert targets (Themes/Opportunities **data-source** IDs, and the "write the `collection://` data source, never a view" rule) live in `scripts/notion_targets.py`.
 
 ## Hard constraints (do / don't)
 - **Don't** commit or print feedback data (real users' PII). **Do** keep `raw/ data/ digests/` gitignored; the `pre-commit` hook blocks them.
@@ -31,7 +37,8 @@ Manual WhatsApp export (`.txt`) → Python *parse · pseudonymize · dedup* → 
 
 ## Conventions
 - Python 3 (stdlib + light deps). Data is **JSONL** (one record per line).
-- Tagging taxonomy + the executable prompt live in `TAGGING.md`. Model output must be **strict JSON** validated against that schema.
+- Tagging taxonomy + the executable prompt live in `TAGGING.md`; output must be **strict JSON** that passes `scripts/schema.py:validate_tag()` (deterministic enum/field check — that validator is the contract, not the model).
+- Aggregation is split: deterministic Theme counts in `scripts/aggregate.py`; agent-run clustering/framing + Opportunity derivation spec'd in `AGGREGATION.md`. Themes are recomputed from `tagged.jsonl` each run — never hand-edit the labels; fix the taxonomy at tag time and re-tag.
 - Don't hardcode file paths in prose docs — they drift; describe conventions instead.
 
 ## How to work (spec-driven)
