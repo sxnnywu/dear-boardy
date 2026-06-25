@@ -23,6 +23,7 @@ Output one record per opportunity to `data/opportunities.jsonl`:
   "problem_statement": "2-4 sentences: the user problem in their words, grounded in the themes and their distinct-user counts.",
   "recommendation": "1-3 sentences: the concrete product move.",
   "impact": "high",
+  "type": "Bug",
   "themes": ["Intro relevance", "Duplicate & declined intros", "..."]
 }
 ```
@@ -31,6 +32,7 @@ Output one record per opportunity to `data/opportunities.jsonl`:
 - **problem_statement** — the *problem*, evidenced by the rolled-up themes; cite the headline signal (distinct users, churn, severity).
 - **recommendation** — the product move, not a spec.
 - **impact** — `high` · `medium` · `low` (must match the Opportunities schema). Drive it off distinct-user reach + severity + churn signal, not message count alone.
+- **type** — `Bug` · `Feature` · `Strategic` (matches the Opportunities `Type` property). Bugs are *defects* (broken behavior — usually rolled up from `type=bug` messages); Features are enhancements/new capabilities; Strategic is a bigger directional bet. Keep defects out of the "opportunity" framing — they're tracked in the same backlog but typed and prioritized separately (severity-first, not reach×impact). The persist step's "By type" board groups on this.
 - **themes** — the theme labels this opportunity rolls up, by their exact `theme` string (the persist step resolves these to the Themes relation).
 
 ### Framing rubric
