@@ -7,7 +7,7 @@ How the model turns one raw message into one structured record. The output **mus
 ```json
 {
   "id": "<carried from the parsed message — do not invent>",
-  "user": "<carried hashed user id, e.g. U-7f2a>",
+  "user": "<carried hashed user id, e.g. U-7f2a1c3d>",
   "date": "<carried>",
   "text": "<carried verbatim>",
   "type": "pain_point",

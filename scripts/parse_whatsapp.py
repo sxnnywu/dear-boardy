@@ -8,8 +8,9 @@ Usage:
 What it does:
   1. Parses WhatsApp exports (iOS and Android formats, multi-line messages).
   2. Drops system/noise lines (encryption notices, "joined", "added", etc.).
-  3. Anonymizes authors (first name only; phone-number authors -> stable Member_xxxx).
-  4. Assigns each message a stable id = sha1(date|author|text).
+  3. Pseudonymizes each author to a stable hashed user id (U-xxxx) at parse time —
+     names and phone numbers are never stored, even locally.
+  4. Assigns each message a stable id = sha1(date|user|text).
   5. Dedupes against data/tagged.jsonl (already-tagged messages).
   6. Writes data/untagged_queue.jsonl = ONLY new messages needing tagging.
 
@@ -43,7 +44,6 @@ SYSTEM_PATTERNS = [
     r"changed the group description", r"you're now an admin",
 ]
 SYSTEM_RE = re.compile("|".join(SYSTEM_PATTERNS), re.IGNORECASE)
-PHONE_RE = re.compile(r"^\+?[\d\s\-()]{7,}$")
 
 # A line that STARTS with a WhatsApp timestamp is always a new entry boundary,
 # even if it has no "Author: text" colon (e.g. system events like "X joined").
@@ -53,18 +53,21 @@ TS_PREFIX_RE = re.compile(
 )
 
 
-def anon_author(raw: str) -> str:
-    """First name only; phone numbers -> stable Member_xxxx (no PII leakage)."""
-    a = raw.strip()
-    if PHONE_RE.match(a):
-        h = hashlib.sha1(a.encode()).hexdigest()[:4]
-        return f"Member_{h}"
-    # keep first name / handle only
-    return a.split()[0] if a.split() else a
+# Pseudonymization happens here, at the parse boundary: every author (name OR
+# phone number) becomes an opaque, stable user id and the raw value is discarded.
+# 8 hex chars keeps the headline distinct-user metric collision-safe at ~600
+# users — 4 chars would expect a few hash collisions across that many authors,
+# silently merging distinct people and undercounting the metric.
+USER_HASH_LEN = 8
 
 
-def msg_id(date: str, author: str, text: str) -> str:
-    return hashlib.sha1(f"{date}|{author}|{text}".encode()).hexdigest()[:16]
+def hash_user(raw: str) -> str:
+    """Stable pseudonymous id for an author; never returns a name or number."""
+    return "U-" + hashlib.sha1(raw.strip().encode()).hexdigest()[:USER_HASH_LEN]
+
+
+def msg_id(date: str, user: str, text: str) -> str:
+    return hashlib.sha1(f"{date}|{user}|{text}".encode()).hexdigest()[:16]
 
 
 def parse(path: Path):
@@ -80,8 +83,7 @@ def parse(path: Path):
             current = {
                 "date": m.group("date"),
                 "time": m.group("time").strip(),
-                "author_raw": author_raw.strip(),
-                "author": anon_author(author_raw),
+                "user": hash_user(author_raw),
                 "text": text,
             }
         elif TS_PREFIX_RE.match(line):
@@ -104,7 +106,7 @@ def parse(path: Path):
             continue
         if not mm["text"].strip():
             continue
-        mm["id"] = msg_id(mm["date"], mm["author"], mm["text"])
+        mm["id"] = msg_id(mm["date"], mm["user"], mm["text"])
         cleaned.append(mm)
     return cleaned
 
@@ -146,12 +148,11 @@ def main():
         "\n".join(json.dumps(m, ensure_ascii=False) for m in new), encoding="utf-8"
     )
 
-    authors = sorted({m["author"] for m in msgs})
     print(json.dumps({
         "parsed_total": len(msgs),
         "already_tagged": len(existing),
         "new_to_tag": len(new),
-        "unique_authors": len(authors),
+        "unique_users": len({m["user"] for m in msgs}),
     }, indent=2))
     print(f"\nWrote queue of {len(new)} new messages -> {data_dir/'untagged_queue.jsonl'}")
 
