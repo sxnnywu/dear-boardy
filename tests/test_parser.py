@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from scripts.parse_whatsapp import parse, anon_author, msg_id, load_existing_ids
+from scripts.parse_whatsapp import parse, hash_user, msg_id, load_existing_ids
 
 SAMPLE = Path(__file__).resolve().parent.parent / "samples" / "sample_chat.txt"
 
@@ -25,16 +25,32 @@ def test_drops_system_lines():
     assert "joined using" not in blob  # timestamped system event must not leak into a message
 
 
-def test_phone_author_is_pseudonymized():
-    assert anon_author("+1 415 555 0199").startswith("Member_")
-    assert anon_author("Sarah Chen") == "Sarah"  # first name only
+def test_author_is_hashed_to_opaque_user_id():
+    # names AND phone numbers become U-xxxx; the raw value never survives
+    assert hash_user("Sarah Chen").startswith("U-")
+    assert hash_user("+1 415 555 0199").startswith("U-")
+    assert "Sarah" not in hash_user("Sarah Chen")
+    assert "415" not in hash_user("+1 415 555 0199")
+    # stable per person, distinct across people
+    assert hash_user("Sarah Chen") == hash_user("Sarah Chen")
+    assert hash_user("Sarah Chen") != hash_user("Marcus")
+
+
+def test_parser_output_carries_no_pii():
+    # the parsed records must contain only a hashed user, no name/number fields
+    msgs = parse(SAMPLE)
+    for m in msgs:
+        assert "author" not in m and "author_raw" not in m
+        assert m["user"].startswith("U-")
+    blob = " ".join(m["user"] for m in msgs) + " ".join(str(m) for m in msgs)
+    assert "Sarah Chen" not in blob and "415 555 0199" not in blob
 
 
 def test_multiline_message_is_captured():
-    # Priya's praise spans two lines in the fixture
+    # a two-line praise message in the fixture is joined into one record
     msgs = parse(SAMPLE)
-    priya = [m for m in msgs if m["author"] == "Priya" and "remembers context" in m["text"]]
-    assert priya and "best part" in priya[0]["text"]
+    multi = [m for m in msgs if "remembers context" in m["text"]]
+    assert multi and "best part" in multi[0]["text"]
 
 
 def test_msg_id_is_deterministic():
